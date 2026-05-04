@@ -1,0 +1,17 @@
+{
+  "name": "101水晶",
+  "appid": "__UNI__101CRYSTAL",
+  "description": "101水晶微信小程序 MVP",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false
+    },
+    "usingComponents": true
+  },
+  "h5": {
+    "title": "101水晶"
+  }
+}

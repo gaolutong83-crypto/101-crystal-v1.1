@@ -1,0 +1,21 @@
+{
+  "name": "101-crystal-miniapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:h5": "uni -p h5",
+    "dev:mp-weixin": "uni -p mp-weixin",
+    "build:mp-weixin": "uni build -p mp-weixin"
+  },
+  "dependencies": {
+    "@dcloudio/uni-app": "vue3",
+    "@dcloudio/uni-components": "vue3",
+    "@dcloudio/uni-h5": "vue3",
+    "@dcloudio/uni-mp-weixin": "vue3",
+    "vue": "latest"
+  },
+  "devDependencies": {
+    "@dcloudio/vite-plugin-uni": "vue3",
+    "vite": "latest"
+  }
+}

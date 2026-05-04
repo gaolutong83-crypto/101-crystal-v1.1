@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>101水晶后台</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <style>
+      body {
+        margin: 0;
+        background: #f5f7fa;
+        color: #303133;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      #app {
+        min-height: 100vh;
+      }
+
+      .layout {
+        min-height: 100vh;
+      }
+
+      .aside {
+        background: #1f2937;
+      }
+
+      .brand {
+        height: 60px;
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        color: #fff;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #fff;
+        border-bottom: 1px solid #ebeef5;
+      }
+
+      .main {
+        padding: 20px;
+      }
+
+      .login-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .login-card {
+        width: 360px;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+
+      .muted {
+        color: #909399;
+      }
+
+      .snapshot {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div v-if="!token" class="login-wrap">
+        <el-card class="login-card">
+          <template #header>
+            <strong>101水晶后台登录</strong>
+          </template>
+          <el-form label-position="top" @submit.prevent>
+            <el-form-item label="API地址">
+              <el-input v-model="apiBase" placeholder="http://localhost:3000/api"></el-input>
+            </el-form-item>
+            <el-form-item label="账号">
+              <el-input v-model="loginForm.username"></el-input>
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input v-model="loginForm.password" type="password" show-password></el-input>
+            </el-form-item>
+            <el-button type="primary" :loading="loading" style="width: 100%" @click="login">
+              登录
+            </el-button>
+          </el-form>
+        </el-card>
+      </div>
+
+      <el-container v-else class="layout">
+        <el-aside width="220px" class="aside">
+          <div class="brand">101水晶后台</div>
+          <el-menu
+            :default-active="activeMenu"
+            background-color="#1f2937"
+            text-color="#d1d5db"
+            active-text-color="#ffffff"
+            @select="selectMenu"
+          >
+            <el-menu-item index="components">组件库存</el-menu-item>
+            <el-menu-item index="orders">订单发货</el-menu-item>
+          </el-menu>
+        </el-aside>
+
+        <el-container>
+          <el-header class="header">
+            <span>{{ activeTitle }}</span>
+            <el-button @click="logout">退出登录</el-button>
+          </el-header>
+
+          <el-main class="main">
+            <el-card v-if="activeMenu === 'components'">
+              <div class="toolbar">
+                <strong>组件库存</strong>
+                <el-button type="primary" @click="loadComponents">刷新</el-button>
+              </div>
+              <el-table :data="components" border v-loading="loading">
+                <el-table-column prop="id" label="ID" width="80"></el-table-column>
+                <el-table-column prop="name" label="名称" min-width="150"></el-table-column>
+                <el-table-column label="类型" width="100">
+                  <template #default="{ row }">{{ typeText(row.type) }}</template>
+                </el-table-column>
+                <el-table-column label="图片" width="100">
+                  <template #default="{ row }">
+                    <el-image :src="row.img_url" style="width: 48px; height: 48px" fit="cover"></el-image>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="price" label="价格" width="100"></el-table-column>
+                <el-table-column label="库存" width="180">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.stock" :min="0" :precision="0" size="small"></el-input-number>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="120">
+                  <template #default="{ row }">
+                    <el-button type="primary" size="small" @click="saveStock(row)">保存</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-card>
+
+            <el-card v-if="activeMenu === 'orders'">
+              <div class="toolbar">
+                <strong>待发货订单</strong>
+                <el-button type="primary" @click="loadOrders">刷新</el-button>
+              </div>
+              <el-table :data="pendingOrders" border v-loading="loading">
+                <el-table-column prop="order_no" label="订单号" min-width="180"></el-table-column>
+                <el-table-column label="DIY方案" min-width="220">
+                  <template #default="{ row }">
+                    <div class="snapshot">
+                      <span v-for="item in snapshotItems(row.diy_snapshot)" :key="item.key">
+                        {{ item.label }}：{{ item.name }}
+                      </span>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="收货地址" min-width="260">
+                  <template #default="{ row }">{{ addressText(row.address_snapshot) }}</template>
+                </el-table-column>
+                <el-table-column prop="total_price" label="金额" width="100"></el-table-column>
+                <el-table-column label="快递单号" min-width="180">
+                  <template #default="{ row }">
+                    <el-input v-model="row.tracking_no" placeholder="填写快递单号"></el-input>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="120">
+                  <template #default="{ row }">
+                    <el-button type="success" size="small" @click="shipOrder(row)">发货</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-empty v-if="pendingOrders.length === 0 && !loading" description="暂无待发货订单"></el-empty>
+            </el-card>
+          </el-main>
+        </el-container>
+      </el-container>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.min.js"></script>
+    <script>
+      const { computed, createApp, reactive, ref } = Vue;
+
+      createApp({
+        setup() {
+          const apiBase = ref(localStorage.getItem('apiBase') || 'http://localhost:3000/api');
+          const token = ref(localStorage.getItem('adminToken') || '');
+          const activeMenu = ref('components');
+          const loading = ref(false);
+          const components = ref([]);
+          const orders = ref([]);
+          const loginForm = reactive({
+            username: 'admin',
+            password: 'admin123'
+          });
+
+          const activeTitle = computed(() => {
+            return activeMenu.value === 'components' ? '组件库存' : '订单发货';
+          });
+
+          const pendingOrders = computed(() => {
+            return orders.value.filter((order) => Number(order.status) === 1);
+          });
+
+          async function apiRequest(path, options = {}) {
+            const response = await fetch(`${apiBase.value}${path}`, {
+              method: options.method || 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token.value ? { Authorization: `Bearer ${token.value}` } : {})
+              },
+              body: options.body ? JSON.stringify(options.body) : undefined
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(data.message || '请求失败');
+            }
+
+            return data;
+          }
+
+          async function login() {
+            loading.value = true;
+
+            try {
+              const res = await apiRequest('/admin/login', {
+                method: 'POST',
+                body: loginForm
+              });
+              token.value = res.data.token;
+              localStorage.setItem('adminToken', token.value);
+              localStorage.setItem('apiBase', apiBase.value);
+              ElementPlus.ElMessage.success('登录成功');
+              await loadComponents();
+            } catch (error) {
+              ElementPlus.ElMessage.error(error.message);
+            } finally {
+              loading.value = false;
+            }
+          }
+
+          function logout() {
+            token.value = '';
+            localStorage.removeItem('adminToken');
+          }
+
+          async function loadComponents() {
+            loading.value = true;
+
+            try {
+              const res = await apiRequest('/admin/components');
+              components.value = res.data;
+            } catch (error) {
+              ElementPlus.ElMessage.error(error.message);
+            } finally {
+              loading.value = false;
+            }
+          }
+
+          async function loadOrders() {
+            loading.value = true;
+
+            try {
+              const res = await apiRequest('/admin/orders');
+              orders.value = res.data.map((order) => ({
+                ...order,
+                tracking_no: order.tracking_no || ''
+              }));
+            } catch (error) {
+              ElementPlus.ElMessage.error(error.message);
+            } finally {
+              loading.value = false;
+            }
+          }
+
+          async function saveStock(row) {
+            try {
+              await apiRequest(`/admin/components/${row.id}/stock`, {
+                method: 'PATCH',
+                body: { stock: Number(row.stock) }
+              });
+              ElementPlus.ElMessage.success('库存已更新');
+            } catch (error) {
+              ElementPlus.ElMessage.error(error.message);
+            }
+          }
+
+          async function shipOrder(row) {
+            if (!row.tracking_no) {
+              ElementPlus.ElMessage.warning('请填写快递单号');
+              return;
+            }
+
+            try {
+              await apiRequest(`/admin/orders/${row.id}/ship`, {
+                method: 'PATCH',
+                body: { tracking_no: row.tracking_no }
+              });
+              ElementPlus.ElMessage.success('订单已发货');
+              await loadOrders();
+            } catch (error) {
+              ElementPlus.ElMessage.error(error.message);
+            }
+          }
+
+          function selectMenu(menu) {
+            activeMenu.value = menu;
+
+            if (menu === 'components') {
+              loadComponents();
+            } else {
+              loadOrders();
+            }
+          }
+
+          function typeText(type) {
+            return { 1: '绳结', 2: '主珠', 3: '配饰' }[type] || '未知';
+          }
+
+          function parseJson(value) {
+            if (!value) {
+              return null;
+            }
+
+            if (typeof value === 'object') {
+              return value;
+            }
+
+            try {
+              return JSON.parse(value);
+            } catch (_error) {
+              return null;
+            }
+          }
+
+          function snapshotItems(snapshot) {
+            const data = parseJson(snapshot);
+            const items = [];
+
+            if (data?.rope) {
+              items.push({ ...data.rope, key: 'rope', label: '绳结' });
+            }
+
+            (data?.beads || []).forEach((bead, index) => {
+              items.push({ ...bead, key: `bead-${index}`, label: `主珠${index + 1}` });
+            });
+
+            if (data?.pendant) {
+              items.push({ ...data.pendant, key: 'pendant', label: '配饰' });
+            }
+
+            return items;
+          }
+
+          function addressText(snapshot) {
+            const data = parseJson(snapshot);
+
+            if (!data) {
+              return '未填写';
+            }
+
+            return `${data.userName || ''} ${data.telNumber || ''} ${data.provinceName || ''}${data.cityName || ''}${data.countyName || ''}${data.detailInfo || ''}`.trim();
+          }
+
+          if (token.value) {
+            loadComponents();
+          }
+
+          return {
+            activeMenu,
+            activeTitle,
+            addressText,
+            apiBase,
+            components,
+            loading,
+            login,
+            loginForm,
+            logout,
+            loadComponents,
+            loadOrders,
+            pendingOrders,
+            saveStock,
+            selectMenu,
+            shipOrder,
+            snapshotItems,
+            token,
+            typeText
+          };
+        }
+      }).use(ElementPlus).mount('#app');
+    </script>
+  </body>
+</html>

@@ -1,0 +1,48 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "101水晶"
+      }
+    },
+    {
+      "path": "pages/diy/diy",
+      "style": {
+        "navigationBarTitleText": "DIY定制"
+      }
+    },
+    {
+      "path": "pages/order/confirm",
+      "style": {
+        "navigationBarTitleText": "确认订单"
+      }
+    },
+    {
+      "path": "pages/orders/index",
+      "style": {
+        "navigationBarTitleText": "我的订单"
+      }
+    },
+    {
+      "path": "pages/admin/index",
+      "style": {
+        "navigationBarTitleText": "后台管理"
+      }
+    }
+  ],
+  "tabBar": {
+    "color": "#7c7167",
+    "selectedColor": "#8c5a3c",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/orders/index",
+        "text": "订单"
+      }
+    ]
+  }
+}
