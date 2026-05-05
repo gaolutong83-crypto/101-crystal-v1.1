@@ -1,3 +1,5 @@
+# 忽略所有点开头文件，但保留 .cursorrules
+!.cursorrules
 # Dependencies
 node_modules/
 frontend/node_modules/

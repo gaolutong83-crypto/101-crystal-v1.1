@@ -1,0 +1,37 @@
+	# 项目背景：串意DIY - 手串定制微信小程序 (MVP版)
+	# 目标：跑通“浏览-DIY搭配-下单支付”核心交易闭环
+	# 技术栈
+	- 前端：Uni-app (Vue3 + Vite + Setup语法糖)
+	- 后端：Node.js + Express
+	- 数据库：MySQL 5.7+
+	- 开发工具：VSCode/Cursor + 微信开发者工具
+	# 架构规范
+	- 前后端分离，通过 RESTful API + JSON 通信。
+	- 前端禁止直连数据库，所有数据通过后端接口获取。
+	- 后端必须处理跨域(CORS)。
+	# 数据库规范
+	- 表名复数形式（如 users, components, orders）。
+	- 查询禁止使用 SELECT *，必须明确字段。
+	- 涉及资金和库存扣减的接口，必须使用 MySQL 事务(Transaction)和 FOR UPDATE 行锁防超卖。
+	# 前端编码规范
+	- 必须使用 Vue3 Composition API (<script setup>)。
+	- 状态管理优先使用 ref 和 reactive。
+	- 请求统一使用封装好的 utils/request.js，自动携带 JWT token。
+	- CSS 布局优先使用 Flexbox。
+	# 核心业务逻辑：DIY定制
+	- 前端维护一个响应式对象 diyState = { rope, beads: [], pendant }。
+	- 预览区使用 Flex 布局横向排列 diyState 中的图片，实时模拟手串展开效果。
+	- 总价通过 computed 基于 diyState 实时计算。
+	# 输出规范
+	- 回答要精简，直接给代码，少写废话。
+	- 如果修改代码，只输出修改的代码块，并注明文件路径。
+	- 发现潜在bug（如内存泄漏、未处理异常）时主动提醒。
+    -如果架构有修改或新增，同时修改readme.md文件
+    # Git 协作规范
+    - 分支策略采用简化版 GitHub Flow：
+    - main: 生产环境稳定版，禁止直接提交。
+    - dev: 日常开发集成分支。
+    - feature/xxx: 新功能开发分支（如 feature/cart）。
+    - hotfix/xxx: 紧急修复分支。
+    - Commit Message 必须遵循 Angular 规范：feat(新增)/fix(修复)/docs(文档)/style(格式)/refactor(重构)。
+    - 示例：feat(client): 增加DIY撤销按钮功能
