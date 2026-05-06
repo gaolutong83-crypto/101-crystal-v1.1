@@ -25,15 +25,28 @@
       </view>
     </view>
 
-    <view class="card address-card" @tap="chooseAddress">
-      <text class="title">收货地址</text>
+    <view class="card address-card">
+      <view class="address-head">
+        <text class="title">收货地址</text>
+        <view class="address-actions">
+          <button class="mini-btn" size="mini" @tap="chooseAddress">微信地址</button>
+          <button class="mini-btn" size="mini" @tap="showManualAddress">手填地址</button>
+        </view>
+      </view>
       <template v-if="address.userName">
         <text class="address-line">{{ address.userName }} {{ address.telNumber }}</text>
         <text class="address-line">
           {{ address.provinceName }}{{ address.cityName }}{{ address.countyName }}{{ address.detailInfo }}
         </text>
       </template>
-      <text v-else class="placeholder">点击选择微信收货地址</text>
+      <text v-else class="placeholder">请选择微信地址；开发者工具不可用时可手填地址</text>
+
+      <view v-if="manualVisible" class="manual-form">
+        <input v-model="manualAddress.userName" class="input" placeholder="收货人姓名" />
+        <input v-model="manualAddress.telNumber" class="input" type="number" placeholder="手机号" />
+        <input v-model="manualAddress.detailInfo" class="input" placeholder="省市区 + 详细地址" />
+        <button class="primary-btn manual-btn" @tap="saveManualAddress">保存手填地址</button>
+      </view>
     </view>
 
     <button class="primary-btn submit-btn" :loading="submitting" @tap="submitOrder">
@@ -55,6 +68,12 @@ const payload = reactive({
 });
 const address = ref({});
 const submitting = ref(false);
+const manualVisible = ref(false);
+const manualAddress = reactive({
+  userName: '',
+  telNumber: '',
+  detailInfo: ''
+});
 
 const previewItems = computed(() => {
   return [payload.rope, ...payload.beads, payload.pendant]
@@ -84,11 +103,35 @@ function chooseAddress() {
   uni.chooseAddress({
     success: (res) => {
       address.value = res;
+      manualVisible.value = false;
     },
     fail: () => {
-      uni.showToast({ title: '未选择地址', icon: 'none' });
+      manualVisible.value = true;
+      uni.showToast({ title: '请手填地址继续测试', icon: 'none' });
     }
   });
+}
+
+function showManualAddress() {
+  manualVisible.value = true;
+}
+
+function saveManualAddress() {
+  if (!manualAddress.userName || !manualAddress.telNumber || !manualAddress.detailInfo) {
+    uni.showToast({ title: '请填写完整地址', icon: 'none' });
+    return;
+  }
+
+  address.value = {
+    userName: manualAddress.userName,
+    telNumber: manualAddress.telNumber,
+    provinceName: '',
+    cityName: '',
+    countyName: '',
+    detailInfo: manualAddress.detailInfo,
+    source: 'manual'
+  };
+  manualVisible.value = false;
 }
 
 async function submitOrder() {
@@ -215,6 +258,24 @@ onLoad((query) => {
   gap: 12rpx;
 }
 
+.address-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.address-actions {
+  display: flex;
+  gap: 12rpx;
+}
+
+.mini-btn {
+  margin: 0;
+  color: #8c5a3c;
+  background: #fbf4ee;
+}
+
 .address-line {
   color: #2f2923;
   line-height: 1.5;
@@ -222,6 +283,24 @@ onLoad((query) => {
 
 .placeholder {
   color: #9b9086;
+}
+
+.manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 12rpx;
+}
+
+.input {
+  height: 76rpx;
+  padding: 0 20rpx;
+  border-radius: 14rpx;
+  background: #f7f3ee;
+}
+
+.manual-btn {
+  margin-top: 8rpx;
 }
 
 .submit-btn {
