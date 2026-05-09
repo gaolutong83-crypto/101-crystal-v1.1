@@ -69,6 +69,7 @@ const payload = reactive({
 const address = ref({});
 const submitting = ref(false);
 const manualVisible = ref(false);
+const cartItemId = ref(0);
 const manualAddress = reactive({
   userName: '',
   telNumber: '',
@@ -161,7 +162,8 @@ async function submitOrder() {
           beads: payload.beads,
           pendant: payload.pendant
         },
-        address_snapshot: address.value
+        address_snapshot: address.value,
+        cart_item_id: cartItemId.value || undefined
       }
     });
 
@@ -183,8 +185,14 @@ onLoad((query) => {
     return;
   }
 
-  const parsed = JSON.parse(decodeURIComponent(query.payload));
-  Object.assign(payload, parsed);
+  try {
+    const parsed = JSON.parse(decodeURIComponent(query.payload));
+    Object.assign(payload, parsed);
+    cartItemId.value = Number(query.cartItemId || query.cart_item_id || 0);
+  } catch (error) {
+    uni.showToast({ title: 'DIY方案解析失败', icon: 'none' });
+    console.warn('订单确认页payload解析失败', error);
+  }
 });
 </script>
 

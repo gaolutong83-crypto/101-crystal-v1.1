@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { adminRouter } from './routes/admin.js';
+import { cartRouter } from './routes/cart.js';
 import { componentsRouter } from './routes/components.js';
 import { ordersRouter } from './routes/orders.js';
 
@@ -14,6 +15,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api/components', componentsRouter);
+app.use('/api/cart', cartRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/admin', adminRouter);
 

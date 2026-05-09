@@ -1,6 +1,6 @@
 # 101水晶微信小程序 MVP
 
-101水晶是一个手串 DIY 定制微信小程序 MVP，目标是跑通“浏览成品/灵感 - DIY搭配 - 确认地址 - 提交订单 - 后台发货”的核心闭环。
+101水晶是一个手串 DIY 定制微信小程序 MVP，目标是跑通“浏览成品/灵感 - DIY搭配 - 加入购物车 - 确认地址 - 提交订单 - 后台发货”的核心闭环。
 
 ## 技术栈
 
@@ -26,11 +26,14 @@
 │       │   └── auth.js
 │       ├── routes
 │       │   ├── admin.js
+│       │   ├── cart.js
 │       │   ├── components.js
 │       │   └── orders.js
 │       └── utils
+│           ├── diySnapshot.js
 │           └── httpError.js
 ├── database
+│   ├── add_cart_items.sql
 │   ├── add_tracking_no.sql
 │   └── init.sql
 ├── admin
@@ -46,6 +49,8 @@
         ├── pages.json
         ├── pages
         │   ├── admin
+        │   │   └── index.vue
+        │   ├── cart
         │   │   └── index.vue
         │   ├── diy
         │   │   ├── diy.vue
@@ -84,6 +89,7 @@ mysql -u root -p < database/init.sql
 如果是旧库升级，需要额外执行：
 
 ```bash
+mysql -u root -p < database/add_cart_items.sql
 mysql -u root -p < database/add_tracking_no.sql
 ```
 
@@ -124,17 +130,21 @@ open admin/index.html
 ## MVP 页面
 
 - 首页：展示主珠成品灵感，跳转 DIY 定制入口。
-- DIY 定制页：选择绳结、主珠多点添加、配饰单选，顶部 Flex 横向实时预览，底部实时计算总价。
+- DIY 定制页：选择绳结、主珠多点添加、配饰单选，顶部 Flex 横向实时预览，底部实时计算总价，可加入购物车或直接确认方案。
+- 购物车页：保存支付前的 DIY 方案，支持删除和去结算。
 - 订单确认页：展示 DIY 方案，优先调用 `uni.chooseAddress` 获取微信原生地址；开发者工具不可用时支持手填地址兜底，提交订单。
-- 我的订单页：按待付款、待发货、已发货 Tab 查询订单。
+- 我的订单页：按待发货、已发货 Tab 查询订单。
 - 极简后台：管理员登录、管理库存、处理待发货订单。
 
 ## API 摘要
 
 - `GET /api/components?type=1|2|3`：获取可售组件。
-- `POST /api/orders/create`：提交订单，后端使用事务和 `FOR UPDATE` 锁定库存并计算总价。
-- `GET /api/orders?status=0|1|2`：按状态查询订单。
-- `PATCH /api/orders/:id/pay`：MVP 模拟付款，将订单改为待发货。
+- `GET /api/cart/items`：获取购物车 DIY 方案列表。
+- `POST /api/cart/items`：保存 DIY 方案到购物车，后端校验组件并重算总价。
+- `DELETE /api/cart/items/:id`：删除购物车项。
+- `POST /api/orders/create`：提交订单，后端使用事务和 `FOR UPDATE` 锁定库存并计算总价；订单直接进入待发货，可携带 `cart_item_id` 删除对应购物车项。
+- `GET /api/orders?status=1|2`：按状态查询订单；`status=0` 仅兼容旧待付款数据。
+- `PATCH /api/orders/:id/pay`：兼容旧待付款订单的模拟付款接口，前端新流程不再调用。
 - `POST /api/admin/login`：管理员登录，返回 JWT。
 - `GET /api/admin/components`：后台组件列表。
 - `PATCH /api/admin/components/:id/stock`：更新库存。

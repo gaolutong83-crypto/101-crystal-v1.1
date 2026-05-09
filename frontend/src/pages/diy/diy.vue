@@ -16,6 +16,17 @@
       <text v-if="previewItems.length === 0" class="empty">请选择绳结、主珠和配饰</text>
     </view>
 
+    <view class="card action-card">
+      <view class="action-row">
+        <button class="action-btn" :disabled="undoStack.length === 0" @tap="undo">撤销</button>
+        <button class="action-btn" :disabled="redoStack.length === 0" @tap="redo">重做</button>
+        <button class="action-btn" @tap="saveTemplate">保存模板</button>
+      </view>
+      <text class="action-tip">
+        历史 {{ undoStack.length }} 步，可重做 {{ redoStack.length }} 步
+      </text>
+    </view>
+
     <view class="selector card">
       <view class="group">
         <text class="group-title">选绳结</text>
@@ -47,6 +58,18 @@
             </view>
           </view>
         </scroll-view>
+        <view v-if="diyState.beads.length > 0" class="selected-beads">
+          <view class="selected-head">
+            <text class="selected-title">已选主珠</text>
+            <text class="clear-link" @tap="clearBeads">清空</text>
+          </view>
+          <view class="selected-list">
+            <view v-for="(item, index) in diyState.beads" :key="`${item.id}-${index}`" class="selected-item">
+              <text class="selected-name">{{ item.name }}</text>
+              <text class="remove-link" @tap="removeBead(index)">删除</text>
+            </view>
+          </view>
+        </view>
       </view>
 
       <view class="group">
@@ -67,6 +90,20 @@
           </view>
         </scroll-view>
       </view>
+
+      <view class="group">
+        <text class="group-title">DIY模板</text>
+        <text v-if="templates.length === 0" class="empty">暂无模板，先保存一个吧</text>
+        <view v-else class="template-list">
+          <view v-for="item in templates" :key="item.id" class="template-item">
+            <text class="template-name">{{ item.name }}</text>
+            <view class="template-actions">
+              <text class="template-link" @tap="applyTemplate(item)">套用</text>
+              <text class="template-link danger" @tap="removeTemplate(item.id)">删除</text>
+            </view>
+          </view>
+        </view>
+      </view>
     </view>
 
     <view class="footer">
@@ -74,19 +111,35 @@
         <text class="total-label">总价</text>
         <text class="total">¥{{ totalPrice }}</text>
       </view>
-      <button class="primary-btn submit-btn" @tap="goConfirm">确认方案</button>
+      <view class="footer-actions">
+        <button class="cart-btn" :loading="cartSubmitting" @tap="addToCart">加入购物车</button>
+        <button class="primary-btn submit-btn" @tap="goConfirm">确认方案</button>
+      </view>
     </view>
   </view>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { onHide, onLoad, onUnload } from '@dcloudio/uni-app';
 import { request } from '../../utils/request';
+
+const HISTORY_LIMIT = 30;
+const TEMPLATE_LIMIT = 5;
+const DRAFT_KEY = 'diy_draft_v1';
+const TEMPLATE_KEY = 'diy_templates_v1';
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DRAFT_DEBOUNCE_MS = 300;
 
 const ropes = ref([]);
 const beads = ref([]);
 const pendants = ref([]);
+const templates = ref([]);
+const undoStack = ref([]);
+const redoStack = ref([]);
+const cartSubmitting = ref(false);
+
+let draftTimer = null;
 
 const diyState = reactive({
   rope: null,
@@ -106,21 +159,324 @@ const totalPrice = computed(() => {
     .toFixed(2);
 });
 
+function cloneComponent(item) {
+  if (!item) {
+    return null;
+  }
+  return {
+    id: item.id,
+    type: item.type,
+    name: item.name,
+    price: item.price,
+    img_url: item.img_url
+  };
+}
+
+function createSnapshot() {
+  return {
+    rope: cloneComponent(diyState.rope),
+    beads: diyState.beads.map((item) => cloneComponent(item)),
+    pendant: cloneComponent(diyState.pendant)
+  };
+}
+
+function snapshotSignature(snapshot) {
+  const ropeId = snapshot.rope?.id || 0;
+  const pendantId = snapshot.pendant?.id || 0;
+  const beadIds = snapshot.beads.map((item) => item.id).join(',');
+  return `${ropeId}|${beadIds}|${pendantId}`;
+}
+
+function pushUndoSnapshot(snapshot) {
+  undoStack.value.push(snapshot);
+  if (undoStack.value.length > HISTORY_LIMIT) {
+    undoStack.value.shift();
+  }
+}
+
+function findById(list, id) {
+  return list.find((item) => Number(item.id) === Number(id)) || null;
+}
+
+function normalizeSnapshot(raw) {
+  const rope = raw?.rope ? findById(ropes.value, raw.rope.id) : null;
+  const pendant = raw?.pendant ? findById(pendants.value, raw.pendant.id) : null;
+  const beadItems = Array.isArray(raw?.beads) ? raw.beads : [];
+
+  return {
+    rope: cloneComponent(rope),
+    beads: beadItems
+      .map((item) => findById(beads.value, item?.id))
+      .filter(Boolean)
+      .map((item) => cloneComponent(item)),
+    pendant: cloneComponent(pendant)
+  };
+}
+
+function applySnapshot(snapshot) {
+  diyState.rope = snapshot.rope;
+  diyState.beads = snapshot.beads;
+  diyState.pendant = snapshot.pendant;
+}
+
+function hasAnySelection(snapshot) {
+  return Boolean(snapshot.rope || snapshot.pendant || snapshot.beads.length > 0);
+}
+
+function saveDraftNow() {
+  try {
+    uni.setStorageSync(
+      DRAFT_KEY,
+      JSON.stringify({
+        version: 1,
+        updatedAt: Date.now(),
+        snapshot: createSnapshot()
+      })
+    );
+  } catch (error) {
+    console.warn('保存DIY草稿失败', error);
+  }
+}
+
+function queueDraftSave() {
+  if (draftTimer) {
+    clearTimeout(draftTimer);
+  }
+  draftTimer = setTimeout(() => {
+    saveDraftNow();
+    draftTimer = null;
+  }, DRAFT_DEBOUNCE_MS);
+}
+
+function flushDraftSave() {
+  if (draftTimer) {
+    clearTimeout(draftTimer);
+    draftTimer = null;
+  }
+  saveDraftNow();
+}
+
+function commitMutation(mutator) {
+  const before = createSnapshot();
+  const beforeSig = snapshotSignature(before);
+
+  mutator();
+
+  const after = createSnapshot();
+  if (snapshotSignature(after) === beforeSig) {
+    return;
+  }
+
+  pushUndoSnapshot(before);
+  redoStack.value = [];
+  queueDraftSave();
+}
+
 function selectRope(item) {
-  diyState.rope = item;
+  commitMutation(() => {
+    diyState.rope = cloneComponent(item);
+  });
 }
 
 function addBead(item) {
-  diyState.beads.push(item);
+  commitMutation(() => {
+    diyState.beads.push(cloneComponent(item));
+  });
+}
+
+function removeBead(index) {
+  commitMutation(() => {
+    diyState.beads.splice(index, 1);
+  });
+}
+
+function clearBeads() {
+  if (diyState.beads.length === 0) {
+    return;
+  }
+  commitMutation(() => {
+    diyState.beads = [];
+  });
 }
 
 function selectPendant(item) {
-  diyState.pendant = item;
+  commitMutation(() => {
+    diyState.pendant = diyState.pendant?.id === item.id ? null : cloneComponent(item);
+  });
+}
+
+function undo() {
+  if (undoStack.value.length === 0) {
+    return;
+  }
+
+  const previous = undoStack.value.pop();
+  redoStack.value.push(createSnapshot());
+  applySnapshot(previous);
+  queueDraftSave();
+}
+
+function redo() {
+  if (redoStack.value.length === 0) {
+    return;
+  }
+
+  const next = redoStack.value.pop();
+  pushUndoSnapshot(createSnapshot());
+  applySnapshot(next);
+  queueDraftSave();
+}
+
+function loadTemplates() {
+  try {
+    const saved = uni.getStorageSync(TEMPLATE_KEY);
+    if (!saved) {
+      templates.value = [];
+      return;
+    }
+
+    const parsed = JSON.parse(saved);
+    templates.value = Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    templates.value = [];
+    console.warn('读取DIY模板失败', error);
+  }
+}
+
+function persistTemplates() {
+  try {
+    uni.setStorageSync(TEMPLATE_KEY, JSON.stringify(templates.value));
+  } catch (error) {
+    console.warn('保存DIY模板失败', error);
+  }
+}
+
+function saveTemplate() {
+  const snapshot = createSnapshot();
+  if (!hasAnySelection(snapshot)) {
+    uni.showToast({ title: '当前方案为空', icon: 'none' });
+    return;
+  }
+
+  const now = new Date();
+  const name = `模板${now.getMonth() + 1}-${now.getDate()} ${now.getHours()}:${String(
+    now.getMinutes()
+  ).padStart(2, '0')}`;
+
+  const next = [
+    {
+      id: `tpl_${Date.now()}`,
+      name,
+      createdAt: Date.now(),
+      snapshot
+    },
+    ...templates.value
+  ].slice(0, TEMPLATE_LIMIT);
+
+  templates.value = next;
+  persistTemplates();
+  uni.showToast({ title: '模板已保存', icon: 'none' });
+}
+
+function applyTemplate(templateItem) {
+  const normalized = normalizeSnapshot(templateItem.snapshot);
+  if (!hasAnySelection(normalized)) {
+    uni.showToast({ title: '模板已失效', icon: 'none' });
+    return;
+  }
+
+  pushUndoSnapshot(createSnapshot());
+  redoStack.value = [];
+  applySnapshot(normalized);
+  queueDraftSave();
+  uni.showToast({ title: '已套用模板', icon: 'none' });
+}
+
+function removeTemplate(templateId) {
+  templates.value = templates.value.filter((item) => item.id !== templateId);
+  persistTemplates();
+}
+
+function restoreDraft() {
+  try {
+    const saved = uni.getStorageSync(DRAFT_KEY);
+    if (!saved) {
+      return;
+    }
+
+    const parsed = JSON.parse(saved);
+    const isExpired = Date.now() - Number(parsed.updatedAt || 0) > DRAFT_TTL_MS;
+    if (parsed.version !== 1 || isExpired) {
+      uni.removeStorageSync(DRAFT_KEY);
+      return;
+    }
+
+    const normalized = normalizeSnapshot(parsed.snapshot);
+    if (!hasAnySelection(normalized)) {
+      return;
+    }
+
+    applySnapshot(normalized);
+    uni.showToast({ title: '已恢复上次草稿', icon: 'none' });
+  } catch (error) {
+    console.warn('恢复DIY草稿失败', error);
+  }
+}
+
+function restoreFromPayload(payload) {
+  try {
+    const parsed = JSON.parse(decodeURIComponent(payload));
+    const normalized = normalizeSnapshot(parsed);
+
+    if (!hasAnySelection(normalized)) {
+      return false;
+    }
+
+    applySnapshot(normalized);
+    return true;
+  } catch (error) {
+    console.warn('恢复购物车DIY方案失败', error);
+    return false;
+  }
+}
+
+function isDiyComplete() {
+  if (!diyState.rope || diyState.beads.length === 0) {
+    uni.showToast({ title: '请选择绳结并添加主珠', icon: 'none' });
+    return false;
+  }
+
+  return true;
+}
+
+async function addToCart() {
+  if (!isDiyComplete() || cartSubmitting.value) {
+    return;
+  }
+
+  cartSubmitting.value = true;
+
+  try {
+    await request({
+      url: '/cart/items',
+      method: 'POST',
+      data: {
+        diy_snapshot: {
+          rope: diyState.rope,
+          beads: diyState.beads,
+          pendant: diyState.pendant
+        }
+      }
+    });
+
+    uni.showToast({ title: '已加入购物车', icon: 'none' });
+  } finally {
+    cartSubmitting.value = false;
+  }
 }
 
 function goConfirm() {
-  if (!diyState.rope || diyState.beads.length === 0) {
-    uni.showToast({ title: '请选择绳结并添加主珠', icon: 'none' });
+  if (!isDiyComplete()) {
     return;
   }
 
@@ -148,7 +504,19 @@ async function loadComponents() {
   pendants.value = pendantRes.data;
 }
 
-onLoad(loadComponents);
+onLoad(async (query) => {
+  await loadComponents();
+  loadTemplates();
+
+  if (query?.payload && restoreFromPayload(query.payload)) {
+    return;
+  }
+
+  restoreDraft();
+});
+
+onHide(flushDraftSave);
+onUnload(flushDraftSave);
 </script>
 
 <style scoped>
@@ -199,6 +567,30 @@ onLoad(loadComponents);
   gap: 30rpx;
 }
 
+.action-card {
+  margin-bottom: 24rpx;
+}
+
+.action-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.action-btn {
+  margin: 0;
+  flex: 1;
+  border: 2rpx solid #eee4d8;
+  background: #fff;
+  color: #5c4a3f;
+}
+
+.action-tip {
+  display: block;
+  margin-top: 10rpx;
+  color: #9b9086;
+  font-size: 22rpx;
+}
+
 .option-scroll {
   width: 100%;
   white-space: nowrap;
@@ -247,6 +639,79 @@ onLoad(loadComponents);
   font-weight: 700;
 }
 
+.selected-beads {
+  margin-top: 16rpx;
+  padding: 12rpx;
+  border-radius: 14rpx;
+  background: #f9f4ee;
+}
+
+.selected-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.selected-title {
+  font-size: 24rpx;
+  color: #5f554b;
+}
+
+.clear-link,
+.remove-link,
+.template-link {
+  color: #9b4d2e;
+  font-size: 24rpx;
+}
+
+.selected-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.selected-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.selected-name {
+  flex: 1;
+  color: #2f2923;
+  font-size: 24rpx;
+}
+
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.template-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 14rpx;
+  border-radius: 14rpx;
+  background: #f9f4ee;
+}
+
+.template-name {
+  color: #2f2923;
+  font-size: 24rpx;
+}
+
+.template-actions {
+  display: flex;
+  gap: 14rpx;
+}
+
+.template-link.danger {
+  color: #b4442f;
+}
+
 .footer {
   position: fixed;
   left: 0;
@@ -258,6 +723,22 @@ onLoad(loadComponents);
   padding: 20rpx 24rpx;
   background: #fff;
   box-shadow: 0 -8rpx 24rpx rgba(68, 50, 33, 0.08);
+}
+
+.footer-actions {
+  display: flex;
+  gap: 14rpx;
+}
+
+.cart-btn {
+  width: 210rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  border-radius: 999rpx;
+  color: #8c5a3c;
+  background: #fbf4ee;
+  font-size: 28rpx;
 }
 
 .total-label {
@@ -273,7 +754,7 @@ onLoad(loadComponents);
 }
 
 .submit-btn {
-  width: 300rpx;
+  width: 220rpx;
   margin: 0;
 }
 </style>

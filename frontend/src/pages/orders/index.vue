@@ -30,7 +30,6 @@
       </view>
       <view class="order-foot">
         <text class="price">¥{{ order.total_price }}</text>
-        <button v-if="order.status === 0" class="pay-btn" size="mini" @tap="pay(order.id)">模拟付款</button>
       </view>
     </view>
   </view>
@@ -42,11 +41,10 @@ import { onShow } from '@dcloudio/uni-app';
 import { request } from '../../utils/request';
 
 const tabs = [
-  { label: '待付款', status: 0 },
   { label: '待发货', status: 1 },
   { label: '已发货', status: 2 }
 ];
-const activeStatus = ref(0);
+const activeStatus = ref(1);
 const orders = ref([]);
 
 function statusText(status) {
@@ -68,11 +66,6 @@ async function loadOrders() {
 function switchTab(status) {
   activeStatus.value = status;
   loadOrders();
-}
-
-async function pay(id) {
-  await request({ url: `/orders/${id}/pay`, method: 'PATCH' });
-  await loadOrders();
 }
 
 onShow(loadOrders);
@@ -130,9 +123,4 @@ onShow(loadOrders);
   font-weight: 700;
 }
 
-.pay-btn {
-  margin: 0;
-  color: #fff;
-  background: #8c5a3c;
-}
 </style>
